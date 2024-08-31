@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "uf2.h"
 #include "flash_firmware.h"
 
@@ -14,6 +15,7 @@
 
 int main(int argc, char *argv[])
 {
+	bool rp2350 = false;
 	int total_size = 0;
 	static uint8_t flashbuffer[FLASH_SIZE];
 	uint32_t offset[INPUT_FILES] = {0, FLASH_FIRMWARE0, FLASH_FIRMWARE1, FLASH_FIRMWARE2, FLASH_FIRMWARE3, FLASH_FIRMWARE4, FLASH_FIRMWARE5};
@@ -21,15 +23,27 @@ int main(int argc, char *argv[])
 
 	FILE *f_input, *f_output;
 
-	if (argc != INPUT_FILES+2) {
-		fprintf(stderr, "Usage: %s <%d binary input files> <UF2 output file>\n", argv[0], INPUT_FILES);
+	if (argc != INPUT_FILES + 3) {
+		fprintf(stderr, "Usage: %s <CPU type> <%d binary input files> <UF2 output file>\n", argv[0], INPUT_FILES);
+		return -1;
+	}
+	
+	if (!strcasecmp(argv[1], "rp2350")) {
+		printf("Create UF2 for RP2350\n");
+		rp2350 = true;
+	}
+	else if (!strcasecmp(argv[1], "rp2040")) {
+		printf("Create UF2 for RP2040\n");
+		rp2350 = false;
+	} else {
+		fprintf(stderr, "Please supply CPU type (rp2040 / rp2350)\n");
 		return -1;
 	}
 
 	memset(flashbuffer, 0xff, FLASH_SIZE);
 
 	for (int i=0; i<INPUT_FILES; i++) {
-		int arg = i + 1;
+		int arg = i + 2;
 		printf("Opening %s for read\n", argv[arg]);
 		f_input = fopen(argv[arg], "rb");
 		if (f_input == NULL) {
@@ -59,7 +73,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	int arg = INPUT_FILES + 1;
+	int arg = INPUT_FILES + 2;
 	printf("Opening %s for write\n", argv[arg]);
 	f_output = fopen(argv[arg], "wb");
 
@@ -72,6 +86,14 @@ int main(int argc, char *argv[])
 	uf2.num_blocks = (total_size + PAYLOAD_SIZE - 1) / PAYLOAD_SIZE;
 	memset(uf2.data, 0, sizeof(uf2.data));
 	uf2.magic_end = UF2_MAGIC_END;
+
+	if (rp2350) {
+		uf2.file_size = ABSOLUTE_FAMILY_ID;
+		uf2.target_addr = 0x10ffff00; // Copied from other UF2 file
+		memset(uf2.data, 0xef, PAYLOAD_SIZE);
+		fwrite(&uf2, sizeof(uf2), 1, f_output);
+		uf2.file_size = RP2350_ARM_S_FAMILY_ID;
+	}
 
 	int index = 0;
 	while (index < total_size) {
